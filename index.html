@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="theme-color" content="#171717" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="apple-mobile-web-app-title" content="Second Brain" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=s50" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=s50" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png?v=s50" />
+    <link rel="manifest" href="/manifest.json?v=s50" />
+    <title>nickdrake.ai · Personal Second Brain</title>
+    <script>
+      (function () {
+        try {
+          var m = localStorage.getItem("nd_theme_mode") || "dark";
+          if (m === "light" || m === "dark") {
+            document.documentElement.setAttribute("data-theme", m);
+            var tc = document.querySelector('meta[name="theme-color"]');
+            if (tc) tc.setAttribute("content", m === "light" ? "#ffffff" : "#171717");
+            var cs = document.querySelector('meta[name="color-scheme"]');
+            if (cs) cs.setAttribute("content", m);
+          }
+          var isStandalone = (window.navigator && window.navigator.standalone === true) || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+          if (isStandalone) {
+            document.documentElement.setAttribute("data-standalone", "true");
+          }
+          var hasSavedAuth = false;
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i) || "";
+            if ((k.indexOf("sb-") === 0 && k.indexOf("-auth-token") !== -1) || k === "nd_last_email") {
+              var val = localStorage.getItem(k) || "";
+              if (val && val.length > 5) {
+                hasSavedAuth = true;
+                break;
+              }
+            }
+          }
+          if (hasSavedAuth) {
+            document.documentElement.setAttribute("data-has-saved-auth", "true");
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <style>
+      html[data-theme="light"], html[data-theme="light"] body { background-color: #ffffff; color: #1c1c1e; }
+      html[data-theme="dark"], html[data-theme="dark"] body { background-color: #171717; color: #f5f5f7; }
+      html[data-has-saved-auth="true"] #auth-gate { display: none !important; }
+      html[data-has-saved-auth="true"] #app-shell { display: flex !important; }
+    </style>
+    <link rel="stylesheet" href="/styles.css?v=s50" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  </head>
+  <body>
+    <!-- Clean Theme-Matched Launch Splash (shown only on cold boot before first data paint; hidden automatically once hydrated) -->
+    <div id="app-boot-splash" class="app-boot-splash" aria-hidden="true">
+      <div class="app-boot-splash-inner">
+        <img src="/apple-touch-icon.png?v=s50" alt="" width="56" height="56" class="app-boot-splash-logo" />
+        <div class="app-boot-splash-spinner"></div>
+      </div>
+    </div>
+    <!-- Apple Dark Mode Sign-In Gate (Shown when unauthenticated or unauthorized) -->
+    <div id="auth-gate" class="auth-gate">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <img
+            src="/apple-touch-icon.png?v=s50"
+            alt="Second Brain"
+            width="64"
+            height="64"
+            class="auth-logo"
+          />
+          <h1 class="auth-title" id="auth-gate-title">nickdrake.ai</h1>
+          <p class="auth-subtitle" id="auth-gate-subtitle">Personal Second Brain</p>
+        </div>
+
+        <!-- Standard Owner & Authorized Health Viewer Sign-In Form -->
+        <button type="button" id="btn-auth-passkey" class="auth-passkey-btn" onclick="window.signInWithPasskey && window.signInWithPasskey()"><span>🔐</span><span id="btn-auth-passkey-label">Sign in with Face ID / Touch ID</span></button>
+        <div id="auth-passkey-status" class="auth-status-msg" hidden style="margin-top:0;margin-bottom:10px;"></div>
+        <div class="auth-divider">or</div>
+        <form id="auth-login-form" class="auth-form" autocomplete="on">
+          <div class="auth-field">
+            <label for="auth-email" class="auth-label" id="auth-email-label">Email</label>
+            <input
+              type="email"
+              id="auth-email"
+              name="email"
+              class="apple-input auth-input"
+              autocomplete="username"
+              placeholder="you@theactionchurch.com"
+              value="nick.drake@theactionchurch.com"
+              required
+            />
+          </div>
+
+          <div class="auth-field">
+            <label for="auth-password" class="auth-label" id="auth-password-label">Password / Viewer Passcode</label>
+            <input
+              type="password"
+              id="auth-password"
+              name="password"
+              class="apple-input auth-input"
+              autocomplete="current-password"
+              placeholder="Password or shared viewer passcode"
+            />
+          </div>
+
+          <button type="submit" id="btn-auth-signin" class="btn-auth-primary">
+            Sign In
+          </button>
+
+          <button type="button" id="btn-auth-magic" class="btn-auth-secondary">
+            Send Magic Link to Email
+          </button>
+
+          <div id="auth-magic-paste-wrap" style="margin-top:6px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);">
+            <label for="auth-paste-link" class="auth-label" style="display:block;margin-bottom:6px;">
+              Or paste Magic Link / localhost URL from email:
+            </label>
+            <div style="display:flex;gap:8px;">
+              <input
+                type="text"
+                id="auth-paste-link"
+                class="apple-input auth-input"
+                placeholder="Paste sign-in link or localhost:3000 URL..."
+                style="flex:1;min-height:38px;font-size:13px;"
+              />
+              <button type="button" id="btn-auth-paste" class="btn-auth-secondary" style="width:auto;min-height:38px;padding:0 14px;white-space:nowrap;">
+                Verify
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <!-- Restricted State (if signed in as an unauthorized account) -->
+        <div id="auth-restricted-box" class="auth-restricted-box" hidden>
+          <div class="auth-restricted-title">Access Restricted</div>
+          <p id="auth-restricted-sub" class="auth-subtitle">
+            This account is not authorized to view this workspace.
+          </p>
+          <button type="button" id="btn-restricted-signout" class="btn-auth-secondary">
+            Sign Out
+          </button>
+        </div>
+
+        <div id="auth-status-msg" class="auth-status-msg" hidden></div>
+      </div>
+    </div>
+
+    <!-- Main Full-Screen App Shell (Hidden until authenticated) -->
+    <div id="app-shell" class="app-shell" data-device="iphone" hidden>
+      <!-- Dedicated iOS Status Bar / Dynamic Island Safe-Area Spacer -->
+      <div id="ios-statusbar-spacer" class="ios-statusbar-spacer" aria-hidden="true"></div>
+      <!-- Top Bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="brand-mark">
+            <img
+              src="/apple-touch-icon.png?v=s50"
+              alt="Second Brain"
+              width="24"
+              height="24"
+              style="width:24px;height:24px;border-radius:6px;display:block;border:1px solid rgba(255,255,255,0.12);"
+            />
+          </div>
+          <div style="min-width:0;">
+            <div class="brand-title" id="topbar-brand-title">nickdrake.ai</div>
+            <div class="brand-sub" id="sync-status-sub">Personal Second Brain</div>
+          </div>
+          <div class="topbar-mode-seg" id="topbar-mode-seg" role="tablist" aria-label="Workspace Switcher">
+            <button type="button" class="topbar-mode-btn active" id="btn-mode-sb" data-mode="sb" onclick="window.switchTab(window._lastSbTab || 'today')">Brain</button>
+            <button type="button" class="topbar-mode-btn" id="btn-mode-health" data-mode="health" onclick="window.switchTab('health')">Health</button>
+          </div>
+        </div>
+<div class="topbar-right">
+          <button type="button" class="btn-quick-create" id="btn-quick-create" title="Create Note, Task/Loop, or Discussion Item">+</button>
+          <div class="user-menu-wrap" id="user-menu-wrap">
+            <button type="button" class="icon-btn user-menu-trigger" id="btn-auth-sheet" title="Settings & Account" aria-haspopup="true" aria-expanded="false">
+              <span id="auth-pill-dot" class="status-dot live"></span>
+              <span id="auth-pill-label">Nick Drake</span>
+              <span class="user-menu-caret" aria-hidden="true">▾</span>
+            </button>
+            <div id="user-dropdown-menu" class="user-dropdown-menu" hidden>
+              <div class="user-dropdown-header">
+                <div class="user-dropdown-name" id="user-dropdown-name">Nick Drake</div>
+                <div class="user-dropdown-email" id="user-dropdown-email">nick.drake@theactionchurch.com</div>
+              </div>
+              <div class="user-dropdown-section">
+                <div class="user-dropdown-kicker">SETTINGS</div>
+                <div class="user-dropdown-theme-row">
+                  <span class="user-dropdown-theme-label">Appearance</span>
+                  <div class="theme-segmented-control" role="group" aria-label="Appearance Mode">
+                    <button type="button" class="theme-seg-btn" data-theme-val="light" onclick="window.setAppTheme && window.setAppTheme('light')">☀️ Light</button>
+                    <button type="button" class="theme-seg-btn active" data-theme-val="dark" onclick="window.setAppTheme && window.setAppTheme('dark')">🌙 Dark</button>
+                  </div>
+                </div>
+              </div>
+              <div class="user-dropdown-divider"></div>
+              <button type="button" class="user-dropdown-item" id="btn-menu-health">
+                <span>📈 Health &amp; Engagement</span>
+              </button>
+              <button type="button" class="user-dropdown-item" id="btn-menu-memory">
+                <span>🧠 Memory</span>
+              </button>
+              <button type="button" class="user-dropdown-item" id="btn-menu-account">
+                <span>⚙️ Settings &amp; Face ID</span>
+              </button>
+              <button type="button" class="user-dropdown-item" id="btn-menu-health-access">
+                <span>🔒 Health Dashboard Access</span>
+              </button>
+              <button type="button" class="user-dropdown-item" id="btn-menu-refresh">
+                <span>🔄 Refresh Data</span>
+              </button>
+              <div class="user-dropdown-divider"></div>
+              <button type="button" class="user-dropdown-item danger" id="btn-menu-signout">
+                <span>🚪 Sign Out</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Workspace Body -->
+      <div class="workspace-body">
+        <!-- Mac / Desktop Left Sidebar (Owner only; hidden for Health Viewers) -->
+        <aside class="mac-sidebar" id="mac-sidebar">
+          <div class="sidebar-group-label">SECOND BRAIN</div>
+          <button type="button" class="side-nav-btn active" data-tab="today">
+            <span>Today</span>
+            <span class="side-count" id="side-count-today">0</span>
+          </button>
+          <button type="button" class="side-nav-btn" data-tab="people">
+            <span>People</span>
+            <span class="side-count" id="side-count-people">0</span>
+          </button>
+          <button type="button" class="side-nav-btn" data-tab="projects">
+            <span>Projects</span>
+            <span class="side-count" id="side-count-projects">0</span>
+          </button>
+          <button type="button" class="side-nav-btn" data-tab="loops">
+            <span>Loops</span>
+            <span class="side-count" id="side-count-loops">0</span>
+          </button>
+          <button type="button" class="side-nav-btn" data-tab="notes">
+            <span>Notes</span>
+            <span class="side-count" id="side-count-notes">0</span>
+          </button>
+          <button type="button" class="side-nav-btn" data-tab="memory">
+            <span>Memory</span>
+            <span class="side-count" id="side-count-memory">0</span>
+          </button>
+
+          <div class="sidebar-group-label" style="margin-top:18px;">ACTION CHURCH</div>
+          <button type="button" class="side-nav-btn" data-tab="health">
+            <span>Health Dashboard</span>
+            <span class="side-count" id="side-count-health" style="color:var(--accent);">Live</span>
+          </button>
+        </aside>
+
+        <!-- Primary Scrollable Content Viewport -->
+        <main class="main-stage" id="main-stage">
+          <div id="ios-ptr-indicator" class="ios-ptr-indicator" aria-hidden="true">
+            <div class="ios-ptr-pill">
+              <span class="ios-ptr-spinner" id="ios-ptr-spinner"></span>
+              <span class="ios-ptr-label" id="ios-ptr-label">Pull to sync</span>
+            </div>
+          </div>
+          <!-- Global Search / Quick Ask Strip (Hidden on /health or for Health Viewers) -->
+          <div class="search-strip spotlight-bar" id="global-search-strip">
+            <svg class="spotlight-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="M20 20l-3.5-3.5"></path>
+            </svg>
+            <input
+              type="search"
+              id="global-search"
+              class="apple-search-input spotlight-input"
+              placeholder="Search meetings, people, loops, projects, notes..."
+              autocomplete="off"
+            />
+            <button type="button" class="spotlight-clear-btn" id="btn-spotlight-clear" aria-label="Clear search" hidden>✕</button>
+            <kbd class="spotlight-kbd" id="spotlight-kbd-hint">⌘K</kbd>
+          </div>
+          <div id="global-ask-drawer" class="ask-drawer" hidden></div>
+
+          <!-- VIEW 1: TODAY & 1:1 PREP -->
+          <section class="view-section" id="view-today">
+            <div class="section-hero today-hero-block">
+              <div style="width:100%;">
+                <div class="today-title-row">
+                  <h1 class="page-h1">Today</h1>
+                  <div class="today-week-nav" id="today-week-nav"></div>
+                </div>
+                <div class="today-week-strip-wrap" id="today-week-strip-wrap">
+                  <div class="today-week-strip" id="today-week-strip" aria-label="2-Week Calendar Strip"></div>
+                </div>
+                <p class="page-sub today-summary-line" id="today-date-sub">Schedule, 1:1 Prep &amp; Open Loops</p>
+              </div>
+            </div>
+
+            <!-- Briefs & One-Tap Debrief Strip on Today -->
+            <div id="today-brief-debrief-strip" class="today-brief-debrief-strip" hidden></div>
+
+            <div class="today-two-col-clean">
+              <div class="ios-group-block">
+                <div class="ios-section-label" id="today-calendar-section-label">TODAY'S CALENDAR</div>
+                <div id="today-calendar-list" class="ios-grouped-list"></div>
+              </div>
+
+              <div class="ios-group-block">
+                <div class="ios-section-label">MY OPEN LOOPS</div>
+                <div id="today-loops-list" class="ios-grouped-list ios-topic-reorder-list"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- VIEW 1B: BRIEFS & ONE-TAP DEBRIEFS (Owner Only) -->
+          <section class="view-section" id="view-briefs" hidden>
+            <div class="section-hero">
+              <div>
+                <h1 class="page-h1" id="briefs-heading">Briefs &amp; Debriefs</h1>
+                <p class="page-sub">Daily / Sunday / Monday Prep Briefs &amp; One-Tap Debrief Answers</p>
+              </div>
+            </div>
+
+            <div class="briefs-layout-grid">
+              <!-- Left/Top Column: One-Tap Debrief Questions -->
+              <div class="ios-group-block">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:0 4px;">
+                  <div class="ios-section-label" id="debrief-section-label">ONE-TAP DEBRIEF QUESTIONS</div>
+                  <div class="chip-scroll" id="debrief-filter-chips" style="padding:0;">
+                    <button type="button" class="filter-chip active" data-dfilter="unanswered" id="chip-debrief-open">Open</button>
+                    <button type="button" class="filter-chip" data-dfilter="answered" id="chip-debrief-answered">Answered</button>
+                    <button type="button" class="filter-chip" data-dfilter="all" id="chip-debrief-all">All</button>
+                  </div>
+                </div>
+                <div id="briefs-debrief-list" class="debrief-cards-stack"></div>
+              </div>
+
+              <!-- Right/Bottom Column: Briefs Reader -->
+              <div class="ios-group-block">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:0 4px;">
+                  <div class="ios-section-label">RECENT BRIEFS</div>
+                  <div class="chip-scroll" id="brief-type-chips" style="padding:0;">
+                    <button type="button" class="filter-chip active" data-btype="ALL">All</button>
+                    <button type="button" class="filter-chip" data-btype="prep">Prep &amp; Morning</button>
+                    <button type="button" class="filter-chip" data-btype="sunday">Sunday</button>
+                  </div>
+                </div>
+                <div id="briefs-reader-list" class="ios-grouped-list" style="margin-bottom:12px;"></div>
+                <div id="briefs-reader-detail" class="brief-reader-card"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- VIEW 2: PEOPLE PROFILES -->
+          <section class="view-section" id="view-people" hidden>
+            <div class="section-hero" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+              <h1 class="page-h1" id="people-heading">People</h1>
+              <div class="inline-mini-seg" id="people-mode-seg">
+                <button type="button" class="inline-mini-pill active" data-pmode="people">People</button>
+                <button type="button" class="inline-mini-pill" data-pmode="meetings">Meetings</button>
+              </div>
+            </div>
+            <div class="filter-bar" style="margin-bottom:10px;">
+              <div class="chip-scroll" id="people-loc-chips">
+                <button type="button" class="filter-chip active" data-loc="ALL" id="chip-people-all">All</button>
+                <button type="button" class="filter-chip" data-loc="HW">HW</button>
+                <button type="button" class="filter-chip" data-loc="SF">SF</button>
+                <button type="button" class="filter-chip" data-loc="Central">Central</button>
+                <button type="button" class="filter-chip" data-loc="WP">WP</button>
+                <button type="button" class="filter-chip" data-loc="OV">OV</button>
+                <button type="button" class="filter-chip" data-loc="WS">WS</button>
+                <button type="button" class="filter-chip" data-loc="AI">AI Team</button>
+              </div>
+            </div>
+            <div id="people-grid" class="ios-grouped-list"></div>
+          </section>
+
+          <!-- VIEW 3: PROJECT PROFILES -->
+          <section class="view-section" id="view-projects" hidden>
+            <div class="section-hero" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+              <h1 class="page-h1" id="projects-heading">Projects</h1>
+              <button type="button" class="btn-primary-pill" id="btn-projects-new" style="width:auto;padding:7px 14px;font-size:13px;" onclick="window.openQuickCreate('project')">+ New Project</button>
+            </div>
+            <div class="filter-bar" style="margin-bottom:10px;">
+              <div class="chip-scroll" id="project-loc-chips">
+                <button type="button" class="filter-chip active" data-loc="ALL" id="chip-projects-all">All</button>
+                <button type="button" class="filter-chip" data-loc="HW">HW</button>
+                <button type="button" class="filter-chip" data-loc="SF">SF</button>
+                <button type="button" class="filter-chip" data-loc="Central">Central</button>
+              </div>
+            </div>
+            <div id="projects-grid" class="ios-grouped-list"></div>
+          </section>
+
+          <!-- VIEW 4: ACTION LOOPS -->
+          <section class="view-section" id="view-loops" hidden>
+            <div class="section-hero">
+              <h1 class="page-h1" id="loops-heading">Loops</h1>
+            </div>
+            <div class="filter-bar" style="margin-bottom:10px;">
+              <div class="chip-scroll" id="loop-type-chips">
+                <button type="button" class="filter-chip active" data-type="open_loop" id="chip-loops-mine">My Loops</button>
+                <button type="button" class="filter-chip" data-type="waiting_on" id="chip-loops-waiting">Waiting</button>
+                <button type="button" class="filter-chip" data-type="coaching_note" id="chip-loops-topics">1:1 &amp; Mtg Topics</button>
+                <button type="button" class="filter-chip" data-type="converted" id="chip-loops-done">Done</button>
+                <button type="button" class="filter-chip" data-type="ALL" id="chip-loops-all">All</button>
+              </div>
+            </div>
+            <div class="ios-grouped-list" style="margin-bottom:12px;">
+              <div class="person-di-composer">
+                <input type="text" id="loops-quick-add-input" class="apple-input" placeholder="Add a personal open loop..." />
+                <button type="button" class="btn-primary-pill" id="btn-loops-quick-add">+ Add</button>
+              </div>
+            </div>
+            <div id="loops-list" class="ios-grouped-list ios-topic-reorder-list"></div>
+          </section>
+
+          <!-- VIEW 5: NOTES -->
+          <section class="view-section" id="view-notes" hidden>
+            <div class="section-hero" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+              <h1 class="page-h1" id="notes-heading">Notes</h1>
+              <button type="button" class="btn-primary-pill" id="btn-notes-new" style="width:auto;padding:7px 14px;font-size:13px;" onclick="window.openQuickCreate('note')">+ New Note</button>
+            </div>
+            <div class="filter-bar" style="margin-bottom:10px;">
+              <div class="chip-scroll" id="notes-cat-chips">
+                <button type="button" class="filter-chip active" data-ncat="ALL">All</button>
+                <button type="button" class="filter-chip" data-ncat="Quick Note">Quick Notes</button>
+                <button type="button" class="filter-chip" data-ncat="Leadership">Leadership</button>
+                <button type="button" class="filter-chip" data-ncat="Coaching">1:1 &amp; Coaching</button>
+              </div>
+            </div>
+            <div id="notes-list" class="ios-grouped-list"></div>
+          </section>
+
+          <section class="view-section" id="view-memory" hidden>
+            <div class="section-hero">
+              <h1 class="page-h1" id="memory-heading">Memory</h1>
+            </div>
+            <div class="filter-bar" style="margin-bottom:10px;">
+              <div class="chip-scroll" id="memory-source-chips">
+                <button type="button" class="filter-chip active" data-src="ALL" id="chip-memory-all">All</button>
+                <button type="button" class="filter-chip" data-src="slack">Slack</button>
+                <button type="button" class="filter-chip" data-src="imessage">iMessage</button>
+                <button type="button" class="filter-chip" data-src="drive">Drive</button>
+                <button type="button" class="filter-chip" data-src="plaud_recording">Plaud</button>
+                <button type="button" class="filter-chip" data-src="meeting_note">Meetings</button>
+                <button type="button" class="filter-chip" data-src="email">Email</button>
+              </div>
+            </div>
+            <div id="memory-list" class="ios-grouped-list"></div>
+          </section>
+
+          <!-- VIEW 6: ACTION CHURCH HEALTH & ENGAGEMENT DASHBOARD (/health) -->
+          <section class="view-section" id="view-health" hidden>
+            <div id="health-dashboard-mount"></div>
+          </section>
+        </main>
+      </div>
+
+      <!-- iOS Bottom Tab Bar (5 Daily Second Brain Tabs: Today, People, Loops, Projects, Notes) -->
+      <nav class="ios-tabbar" id="ios-tabbar" aria-label="Bottom Navigation">
+        <button type="button" class="ios-tab active" data-tab="today">
+          <svg class="ios-tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.2"></circle>
+            <path d="M12 2.5v2.2M12 19.3v2.2M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"></path>
+          </svg>
+          <span class="ios-tab-label">Today</span>
+        </button>
+        <button type="button" class="ios-tab" data-tab="people">
+          <svg class="ios-tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="9" cy="7.5" r="3.2"></circle>
+            <path d="M3.5 19.5c0-3 2.5-5.2 5.5-5.2s5.5 2.2 5.5 5.2"></path>
+            <circle cx="16.8" cy="8.5" r="2.5"></circle>
+            <path d="M15.5 14.5c2.4.3 4.3 2.1 4.3 4.7"></path>
+          </svg>
+          <span class="ios-tab-label" id="ios-tab-people">People</span>
+        </button>
+        <button type="button" class="ios-tab" data-tab="loops">
+          <svg class="ios-tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="8.5"></circle>
+            <path d="M8.5 12.3l2.3 2.3 4.8-5"></path>
+          </svg>
+          <span class="ios-tab-label" id="ios-tab-loops">Loops</span>
+        </button>
+        <button type="button" class="ios-tab" data-tab="projects">
+          <svg class="ios-tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3.5 7.5a2 2 0 0 1 2-2h3.9l2 2h7.1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2v-10z"></path>
+          </svg>
+          <span class="ios-tab-label" id="ios-tab-projects">Projects</span>
+        </button>
+        <button type="button" class="ios-tab" data-tab="notes">
+          <svg class="ios-tab-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5l-5-5z"></path>
+            <path d="M14 3.5v5h5M8.5 13h7M8.5 16.5h4.5"></path>
+          </svg>
+          <span class="ios-tab-label" id="ios-tab-notes">Notes</span>
+        </button>
+      </nav>
+
+      <!-- Detail Slide-Over Sheet (Person / Project / Loop / Memory / Auth / Access) -->
+      <div id="sheet-backdrop" class="sheet-backdrop" hidden>
+        <div class="sheet-panel" id="sheet-panel">
+          <div class="sheet-grabber-wrap" id="sheet-grabber-wrap" aria-hidden="true"><div class="sheet-grabber"></div></div>
+          <div class="sheet-header">
+            <div class="sheet-header-titles" style="min-width:0;flex:1;">
+              <button type="button" class="btn-sheet-back" id="btn-sheet-back" hidden>‹ Back</button>
+              <div class="sheet-kicker" id="sheet-kicker">DETAILS</div>
+              <h2 class="sheet-title" id="sheet-title">Details</h2>
+            </div>
+            <button type="button" class="btn-close-sheet" id="btn-close-sheet">Done</button>
+          </div>
+          <div class="sheet-body" id="sheet-body"></div>
+        </div>
+      </div>
+
+      <!-- iOS Long-Press Context Menu -->
+      <div id="ios-context-backdrop" class="ios-context-backdrop" hidden>
+        <div id="ios-context-menu" class="ios-context-menu"></div>
+      </div>
+
+      <!-- iOS Undo Toast Pill -->
+      <div id="ios-undo-toast" class="ios-undo-toast" hidden>
+        <span id="ios-undo-msg">Completed</span>
+        <button type="button" id="btn-ios-undo" class="btn-ios-undo">Undo</button>
+      </div>
+    </div>
+
+    <script src="/health-bundle.js?v=s50"></script>
+    <script src="/app.js?v=s50"></script>
+  </body>
+</html>
